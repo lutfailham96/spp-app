@@ -1,6 +1,7 @@
 from app.databases.db_sql import db_sql
 from app.databases.models.siswa import Siswa
 
+
 class Kelas(db_sql.Model):
     id = db_sql.Column(db_sql.Integer(), primary_key=True)
     kelas = db_sql.Column(db_sql.String(32), nullable=False, unique=True)

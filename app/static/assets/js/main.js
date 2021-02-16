@@ -1,4 +1,5 @@
 $(document).ready(function () {
+    /* VARS */
     let inputValid = false
     let editedIndex = -1
     const addSchoolYear = $('#add-school-year')
@@ -14,10 +15,33 @@ $(document).ready(function () {
     const btnChangePassword = $('#change-password')
     const modalChangePassword = $('#modal-change-password')
     const formChangePassword = $('#form-change-password')
+    let transaction = {
+        student: {
+            nis: '',
+            bulan: 0,
+            tahun: 0,
+            jenis: 0
+        },
+        months: [
+            { text: 'Januari', status: false },
+            { text: 'Februari', status: false },
+            { text: 'Maret', status: false },
+            { text: 'April', status: false },
+            { text: 'Mei', status: false },
+            { text: 'Juni', status: false },
+            { text: 'Juli', status: false },
+            { text: 'Agustus', status: false },
+            { text: 'September', status: false },
+            { text: 'Oktober', status: false },
+            { text: 'November', status: false },
+            { text: 'Desember', status: false },
+        ]
+    }
     const formTransaction = $('#form-transaction')
+    const transactionYear = $('#transaction-year')
     const filterClass = $('#filter-class')
     const filterStudent = $('#filter-student')
-    const tableClass = $('#table-class').on( 'init.dt', function () {
+    $('#table-class').on( 'init.dt', function () {
         $('.dt-buttons .btn').removeClass('btn-secondary').addClass('btn-sm btn-default')
     }).DataTable({
         ajax: '/ajax/kelas',
@@ -159,7 +183,6 @@ $(document).ready(function () {
             }
         }
     })
-
     const tableTransaction = $('#table-transaction').on( 'init.dt', function () {
         $('.dt-buttons .btn').removeClass('btn-secondary').addClass('btn-sm btn-default')
     }).DataTable({
@@ -228,8 +251,7 @@ $(document).ready(function () {
             }
         }
     })
-
-    const tableReport = $('#table-report').on( 'init.dt', function () {
+    $('#table-report').on( 'init.dt', function () {
         $('.dt-buttons .btn').removeClass('btn-secondary').addClass('btn-sm btn-default')
     }).DataTable({
         ajax: '/ajax/laporan2',
@@ -273,33 +295,16 @@ $(document).ready(function () {
         }
     })
 
-    let transaction = {
-        student: {
-            nis: '',
-            bulan: 0,
-            tahun: 0,
-            jenis: 0
-        },
-        months: [
-            { text: 'Januari', status: false },
-            { text: 'Februari', status: false },
-            { text: 'Maret', status: false },
-            { text: 'April', status: false },
-            { text: 'Mei', status: false },
-            { text: 'Juni', status: false },
-            { text: 'Juli', status: false },
-            { text: 'Agustus', status: false },
-            { text: 'September', status: false },
-            { text: 'Oktober', status: false },
-            { text: 'November', status: false },
-            { text: 'Desember', status: false },
-        ]
-    }
-
+    /* TRANSACTION */
+    transactionYear.on('change', function () {
+        resetMonths()
+        refreshTransaction()
+        generatePayment(transaction.student.jenis)
+    })
     formTransaction.on('submit', function (e) {
         e.preventDefault()
         transaction.student.bulan = $('#transaction-month').val()
-        transaction.student.tahun = $('#transaction-year').val()
+        transaction.student.tahun = transactionYear.val()
         swal({
             title: 'Apa anda yakin?',
             text: "Data pembayaran tidak dapat diubah!",
@@ -322,7 +327,65 @@ $(document).ready(function () {
             }
         })
     })
-
+    tableTransaction.on('click', '.print-item', function () {
+        const transactionId = $(this).data('id')
+        axios.get('/ajax/pembayaran/' + transactionId).then(response => {
+            if (response.data.status === 'OK') {
+                const printStatus = $('#print-status')
+                const body = $('body')
+                const bodyAll = $('body *')
+                const printNominal = $('#print-nominal')
+                $('#print-name').html(response.data.data.nama_siswa)
+                $('#print-nis').html(response.data.data.nis_siswa)
+                $('#print-uuid').html(response.data.data.uuid)
+                $('#print-month').html(transaction.months[response.data.data.bulan].text)
+                $('#print-year').html(response.data.data.tahun)
+                if (response.data.data.nominal > 0)
+                    printNominal.html(formatRupiah(response.data.data.nominal.toString(), 'Rp. '))
+                else
+                    printNominal.html('BEASISWA GRATIS')
+                $('#print-class').html(response.data.data.kelas)
+                if (response.data.data.status === false) {
+                    printStatus.html('Tepat Waktu')
+                } else {
+                    printStatus.html('Tunggakan')
+                }
+                body.css('visibility', 'hidden')
+                bodyAll.css('visibility', 'hidden')
+                $('#printable').css('visibility', 'visible')
+                $('#printable *').css('visibility', 'visible')
+                window.print()
+                body.css('visibility', 'visible')
+                bodyAll.css('visibility', 'visible')
+            }
+        })
+    })
+    function initTransaction () {
+        filterStudent.select2()
+        fetchStudents().then(response => {
+            let html = ''
+            $.each(response.data.data, function (index, data) {
+                html += '<option value="' + data.id + '">' + data.nama + ' (' + data.nis + ')' + '</option>'
+            })
+            filterStudent.html(html)
+            showStudent()
+        })
+        const date = new Date()
+        const year = date.getFullYear()
+        transactionYear.val(year)
+    }
+    function refreshTransaction() {
+        tableTransaction.ajax.url('/ajax/pembayaran?nis=' + transaction.student.nis).load(function () {
+            const date = new Date()
+            const year = date.getFullYear()
+            if (parseInt(transactionYear.val()) >= year) {
+                tableTransaction.rows().every(function () {
+                    transaction.months[parseInt(this.data().bulan)].status = true
+                })
+            }
+            fetchMonths()
+        }, false)
+    }
     function fetchMonths() {
         const transactionMonth = $('#transaction-month')
         let html = ''
@@ -337,108 +400,13 @@ $(document).ready(function () {
         $('#form-transaction button').prop('disabled', false)
         generatePayment(transaction.student.jenis)
     }
-    
-    $('#transaction-year').on('change', function () {
-        generatePayment(transaction.student.jenis)
-    })
-
-    initializeView()
-
-    function savedAlert () {
-        swal({
-            title: 'Success',
-            text: 'Data berhasil disimpan',
-            type: 'success',
-            buttonsStyling: false,
-            confirmButtonClass: 'btn btn-success',
-            timer: 1500
+    function resetMonths() {
+        $.each(transaction.months, function (index) {
+            transaction.months[index].status = false
         })
     }
 
-    function removedAlert () {
-        swal({
-            title: 'Success',
-            text: 'Data berhasil dihapus',
-            type: 'success',
-            buttonsStyling: false,
-            confirmButtonClass: 'btn btn-success',
-            timer: 1500
-        })
-    }
-
-    function successAlert (msg) {
-        swal({
-            title: 'Success',
-            text: msg,
-            type: 'success',
-            buttonsStyling: false,
-            confirmButtonClass: 'btn btn-success',
-            timer: 1500
-        })
-    }
-
-    function failedAlert (msg) {
-        swal({
-            title: 'Error',
-            text: msg,
-            type: 'error',
-            buttonsStyling: false,
-            confirmButtonClass: 'btn btn-info',
-            timer: 1500
-        })
-    }
-
-    function removeConfirm () {
-        return new Promise(resolve => {
-            swal({
-                title: 'Apa anda yakin?',
-                text: "Perubahan tidak dapat dikembalikan!",
-                type: 'warning',
-                showCancelButton: true,
-                buttonsStyling: false,
-                confirmButtonClass: 'btn btn-danger',
-                confirmButtonText: 'Ya',
-                cancelButtonClass: 'btn btn-secondary',
-                cancelButtonText: 'Batal',
-                reverseButtons: true
-            }).then(result => resolve(result))
-        })
-    }
-
-    $('#table-transaction').on('click', '.print-item', function () {
-        const transactionId = $(this).data('id')
-        axios.get('/ajax/pembayaran/' + transactionId).then(response => {
-            if (response.data.status === 'OK') {
-                const printStatus = $('#print-status')
-                $('#print-name').html(response.data.data.nama_siswa)
-                $('#print-nis').html(response.data.data.nis_siswa)
-                $('#print-uuid').html(response.data.data.uuid)
-                $('#print-month').html(transaction.months[response.data.data.bulan].text)
-                $('#print-year').html(response.data.data.tahun)
-                const printNominal = $('#print-nominal')
-                if (response.data.data.nominal > 0)
-                    printNominal.html(formatRupiah(response.data.data.nominal.toString(), 'Rp. '))
-                else
-                    printNominal.html('BEASISWA GRATIS')
-                $('#print-class').html(response.data.data.kelas)
-                if (response.data.data.status === false) {
-                    printStatus.html('Tepat Waktu')
-                } else {
-                    printStatus.html('Tunggakan')
-                }
-                // $(document.body).hide()
-                // $('#printable').show()
-                $('body').css('visibility', 'hidden')
-                $('body *').css('visibility', 'hidden')
-                $('#printable').css('visibility', 'visible')
-                $('#printable *').css('visibility', 'visible')
-                window.print()
-                $('body').css('visibility', 'visible')
-                $('body *').css('visibility', 'visible')
-            }
-        })
-    })
-
+    /* REPORT */
     function initReport() {
         const data = {
             tepat: 0,
@@ -517,284 +485,19 @@ $(document).ready(function () {
         })
     }
 
-    function unremovedAlert () {
-        swal({
-            title: 'Error',
-            text: 'Gagal menghapus data',
-            type: 'error',
-            buttonsStyling: false,
-            confirmButtonClass: 'btn btn-info',
-            timer: 1500
-        })
-    }
-
-    function unsavedAlert () {
-        swal({
-            title: 'Error',
-            text: 'Gagal menyimpan data',
-            type: 'error',
-            buttonsStyling: false,
-            confirmButtonClass: 'btn btn-info',
-            timer: 1500
-        })
-    }
-
-    function initializeView () {
-        activateNav()
-    }
-
-    function activateNav () {
-        const endpoint = window.location.pathname
-        if (endpoint === '/tahun-ajaran') {
-            $('#nav-tahun-ajaran').addClass('active')
-        } else if (endpoint === '/siswa') {
-            $('#nav-siswa').addClass('active')
-            $('#tabel-siswa').DataTable()
-        } else if (endpoint === '/dashboard') {
-            $('#nav-dashboard').addClass('active')
-            const totalTransactions = $('#total-transactions')
-            totalTransactions.html(formatRupiah(totalTransactions.html(), 'Rp. '))
-        } else if (endpoint === '/kelas') {
-            $('#nav-kelas').addClass('active')
-        } else if (endpoint === '/pembayaran') {
-            $('#nav-pembayaran').addClass('active')
-            initTransaction()
-            generatePayment()
-        } else if (endpoint === '/laporan') {
-            $('#nav-laporan').addClass('active')
-            initReport()
-        }
-    }
-
-    function initTransaction () {
-        filterStudent.select2()
-        fetchStudents().then(response => {
-            let html = ''
-            $.each(response.data.data, function (index, data) {
-                html += '<option value="' + data.id + '">' + data.nama + ' (' + data.nis + ')' + '</option>'
-            })
-            filterStudent.html(html)
-            showStudent()
-        })
-        const date = new Date()
-        const year = date.getFullYear()
-        $('#transaction-year').val(year)
-    }
-
+    /* STUDENT */
+    $('#show-class').on('click', function () {
+        tableStudent.ajax.url('/ajax/siswa?kelas=' + filterClass.val()).load(null, true)
+    })
+    filterClass.on('change', () => {
+        tableStudent.ajax.url('/ajax/siswa?kelas=' + filterClass.val()).load(null, true)
+    })
     filterStudent.on('change', () => {
         showStudent()
     })
-
     $('#show-student').on('click', function () {
         showStudent()
     })
-
-    function showStudent() {
-        const idStudent = filterStudent.val()
-        resetMonths()
-        axios.get('/ajax/siswa/' + idStudent).then(response => {
-            if (response.data.status === 'OK') {
-                $('#student-nis').html(response.data.data.nis)
-                $('#student-name').html(response.data.data.nama)
-                $('#student-address').html(response.data.data.alamat)
-                const gender = response.data.data.jenis_kelamin === 0 ? 'Laki-Laki' : 'Perempuan'
-                $('#student-gender').html(gender)
-                $('#student-school-year').html(response.data.data.tahun_ajaran)
-                $('#student-class').html(response.data.data.kelas)
-                // refresh table
-                transaction.student.nis = response.data.data.nis
-                transaction.student.jenis = response.data.data.jenis_siswa
-                refreshTransaction()
-            }
-        })
-    }
-
-    function refreshTransaction() {
-        tableTransaction.ajax.url('/ajax/pembayaran?nis=' + transaction.student.nis).load(function () {
-            tableTransaction.rows().every(function () {
-                transaction.months[parseInt(this.data().bulan)].status = true
-            })
-            fetchMonths()
-        }, false)
-    }
-
-    function resetMonths() {
-        $.each(transaction.months, function (index) {
-            transaction.months[index].status = false
-        })
-    }
-
-    addSchoolYear.on('click', function () {
-        editedIndex = -1
-        $('#input-school-year').val('')
-        titleSchoolYear.html('Tambah Tahun Ajaran')
-        modalSchoolYear.modal('show')
-    })
-
-    formSchoolYear.on('submit', function (e) {
-        const data = {
-            tahun_ajaran: $('#input-school-year').val()
-        }
-        e.preventDefault()
-        if (editedIndex > -1) {
-            axios.put('/ajax/tahun-ajaran/' + editedIndex, data).then(response => {
-                if (response.data.status === 'OK') {
-                    tableSchoolYear.ajax.reload(null, false)
-                    modalSchoolYear.modal('hide')
-                    savedAlert()
-                } else unsavedAlert()
-            }).catch(() => unsavedAlert())
-        } else {
-            axios.post('/ajax/tahun-ajaran', data).then(response => {
-                if (response.data.status === 'OK') {
-                    tableSchoolYear.ajax.reload(null, false)
-                    modalSchoolYear.modal('hide')
-                    savedAlert()
-                } else unsavedAlert()
-            }).catch(() => unsavedAlert())
-        }
-    })
-
-    tableSchoolYear.on('click', '.edit-item', function () {
-        editedIndex = $(this).data('id')
-        titleSchoolYear.html('Edit Tahun Ajaran')
-        axios.get('/ajax/tahun-ajaran/' + editedIndex).then(response => {
-            if (response.data.status === 'OK') {
-                $('#input-school-year').val(response.data.data.tahun_ajaran)
-                modalSchoolYear.modal('show')
-            }
-        })
-    })
-
-    tableSchoolYear.on('click', '.delete-item', function () {
-        editedIndex = $(this).data('id')
-        removeConfirm().then(result => {
-            if (result.value) {
-                axios.delete('/ajax/tahun-ajaran/' + editedIndex).then(response => {
-                    if (response.data.status === 'OK') {
-                        tableSchoolYear.ajax.reload(null, false)
-                        removedAlert()
-                    } else unremovedAlert()
-                }).catch(() => unremovedAlert())
-            }
-        })
-    })
-
-    formProfile.on('submit', function (e) {
-        e.preventDefault()
-        const data = {
-            name: $('#name').val(),
-            password: $('#password').val()
-        }
-        axios.put('/profil', data).then(response => {
-            if (response.data.status === 'OK') {
-                successAlert('Profile berhasil diperbarui')
-                $('#password').val('')
-            } else failedAlert('Gagal memperbarui profile')
-        }).catch(() => failedAlert('Gagal memperbarui profile'))
-    })
-
-    btnChangePassword.on('click', function () {
-        modalChangePassword.modal('show')
-    })
-
-    formChangePassword.on('submit', function (e) {
-        e.preventDefault()
-        if (inputValid) {
-            const data = {
-                password_confirmation: $('#new-password-confirmation').val()
-            }
-            axios.put('/change-password', data).then(response => {
-                if (response.data.status === 'OK') {
-                    successAlert('Password berhasil diperbarui')
-                    $('#new-password').val('')
-                    $('#new-password-confirmation').val('')
-                    modalChangePassword.modal('hide')
-                } else failedAlert('Gagal memperbarui password')
-            }).catch(() => failedAlert('Gagal memperbarui password'))
-        }
-    })
-
-    formChangePassword.on('keyup', '#new-password-confirmation', function () {
-        if ($(this).val() !== $('#new-password').val()) {
-            $(this).addClass('is-invalid')
-            inputValid = false
-        } else {
-            $(this).removeClass('is-invalid')
-            inputValid = true
-        }
-    })
-
-    tableStudent.on('click', '.delete-item', function () {
-        editedIndex = $(this).data('id')
-        removeConfirm().then(result => {
-            if (result.value) {
-                axios.delete('/ajax/siswa/' + editedIndex).then(response => {
-                    if (response.data.status === 'OK') {
-                        tableStudent.ajax.reload(null, false)
-                        removedAlert()
-                    } else unremovedAlert()
-                }).catch(() => unremovedAlert())
-            }
-        })
-    })
-
-    function fetchSchoolYear () {
-        return new Promise(resolve => {
-            axios.get('/ajax/tahun-ajaran').then(response => {
-                if (response.data.status === 'OK') {
-                    let html = ''
-                    $.each(response.data.data, function (index, item) {
-                        html += '<option value="' + item.id + '">' + item.tahun_ajaran + '</option>'
-                    })
-                    $('#input-school-year').html(html)
-                    resolve(response)
-                }
-            })
-        })
-    }
-
-    function fetchClass () {
-        return new Promise(resolve => {
-            axios.get('/ajax/kelas').then(response => {
-                if (response.data.status === 'OK') {
-                    let html = ''
-                    $.each(response.data.data, function (index, item) {
-                        html += '<option value="' + item.id + '">' + item.kelas + '</option>'
-                    })
-                    $('#input-class').html(html)
-                    resolve(response)
-                }
-            })
-        })
-    }
-
-    function fetchStudent (id) {
-        axios.get('/ajax/siswa/' + id).then(response => {
-            if (response.data.status === 'OK') {
-                $('#input-nis').val(response.data.data.nis)
-                $('#input-name').val(response.data.data.nama)
-                $('#input-gender').val(response.data.data.jenis_kelamin)
-                $('#input-class').val(response.data.data.id_kelas)
-                $('#input-school-year').val(response.data.data.id_tahun_ajaran)
-                $('#input-religion').val(response.data.data.agama)
-                $('#input-student-type').val(response.data.data.jenis_siswa)
-                $('#input-address').val(response.data.data.alamat)
-                modalStudent.modal('show')
-            }
-        })
-    }
-
-    tableStudent.on('click', '.edit-item', function () {
-        editedIndex = $(this).data('id')
-        titleStudent.html('Edit Siswa')
-        fetchClass().then(() => {
-            fetchSchoolYear().then(() => {
-                fetchStudent(editedIndex)
-            })
-        })
-    })
-
     addStudent.on('click', function () {
         editedIndex = -1
         titleStudent.html('Tambah Siswa')
@@ -812,7 +515,6 @@ $(document).ready(function () {
             })
         })
     })
-
     formStudent.on('submit', function (e) {
         e.preventDefault()
         const data = {
@@ -843,11 +545,101 @@ $(document).ready(function () {
             }).catch(() => unsavedAlert())
         }
     })
-
-    $('#show-class').on('click', function () {
-        tableStudent.ajax.url('/ajax/siswa?kelas=' + filterClass.val()).load(null, true)
+    tableStudent.on('click', '.edit-item', function () {
+        editedIndex = $(this).data('id')
+        titleStudent.html('Edit Siswa')
+        fetchClass().then(() => {
+            fetchSchoolYear().then(() => {
+                fetchStudent(editedIndex)
+            })
+        })
     })
+    tableStudent.on('click', '.delete-item', function () {
+        editedIndex = $(this).data('id')
+        removeConfirm().then(result => {
+            if (result.value) {
+                axios.delete('/ajax/siswa/' + editedIndex).then(response => {
+                    if (response.data.status === 'OK') {
+                        tableStudent.ajax.reload(null, false)
+                        removedAlert()
+                    } else unremovedAlert()
+                }).catch(() => unremovedAlert())
+            }
+        })
+    })
+    function fetchStudents () {
+        return new Promise(resolve => {
+            axios.get('/ajax/siswa?kelas=').then(response => {
+                if (response.data.status === 'OK') {
+                    resolve(response)
+                }
+            })
+        })
+    }
+    function fetchStudent (id) {
+        axios.get('/ajax/siswa/' + id).then(response => {
+            if (response.data.status === 'OK') {
+                $('#input-nis').val(response.data.data.nis)
+                $('#input-name').val(response.data.data.nama)
+                $('#input-gender').val(response.data.data.jenis_kelamin)
+                $('#input-class').val(response.data.data.id_kelas)
+                $('#input-school-year').val(response.data.data.id_tahun_ajaran)
+                $('#input-religion').val(response.data.data.agama)
+                $('#input-student-type').val(response.data.data.jenis_siswa)
+                $('#input-address').val(response.data.data.alamat)
+                modalStudent.modal('show')
+            }
+        })
+    }
+    function showStudent() {
+        const idStudent = filterStudent.val()
+        resetMonths()
+        axios.get('/ajax/siswa/' + idStudent).then(response => {
+            if (response.data.status === 'OK') {
+                $('#student-nis').html(response.data.data.nis)
+                $('#student-name').html(response.data.data.nama)
+                $('#student-address').html(response.data.data.alamat)
+                const gender = response.data.data.jenis_kelamin === 0 ? 'Laki-Laki' : 'Perempuan'
+                $('#student-gender').html(gender)
+                $('#student-school-year').html(response.data.data.tahun_ajaran)
+                $('#student-class').html(response.data.data.kelas)
+                // refresh table
+                transaction.student.nis = response.data.data.nis
+                transaction.student.jenis = response.data.data.jenis_siswa
+                refreshTransaction()
+            }
+        })
+    }
+    function fetchSchoolYear () {
+        return new Promise(resolve => {
+            axios.get('/ajax/tahun-ajaran').then(response => {
+                if (response.data.status === 'OK') {
+                    let html = ''
+                    $.each(response.data.data, function (index, item) {
+                        html += '<option value="' + item.id + '">' + item.tahun_ajaran + '</option>'
+                    })
+                    $('#input-school-year').html(html)
+                    resolve(response)
+                }
+            })
+        })
+    }
+    function fetchClass () {
+        return new Promise(resolve => {
+            axios.get('/ajax/kelas').then(response => {
+                if (response.data.status === 'OK') {
+                    let html = ''
+                    $.each(response.data.data, function (index, item) {
+                        html += '<option value="' + item.id + '">' + item.kelas + '</option>'
+                    })
+                    $('#input-class').html(html)
+                    resolve(response)
+                }
+            })
+        })
+    }
 
+    /* SETTING */
     formSchool.on('submit', function (e) {
         e.preventDefault()
         const data = {
@@ -862,14 +654,208 @@ $(document).ready(function () {
         }).catch(() => failedAlert('Gagal memperbarui data sekolah'))
     })
 
-    function fetchStudents () {
-        return new Promise(resolve => {
-            axios.get('/ajax/siswa?kelas=').then(response => {
+    /* PROFILE */
+    formProfile.on('submit', function (e) {
+        e.preventDefault()
+        const data = {
+            name: $('#name').val(),
+            password: $('#password').val()
+        }
+        axios.put('/profil', data).then(response => {
+            if (response.data.status === 'OK') {
+                successAlert('Profile berhasil diperbarui')
+                $('#password').val('')
+            } else failedAlert('Gagal memperbarui profile')
+        }).catch(() => failedAlert('Gagal memperbarui profile'))
+    })
+    btnChangePassword.on('click', function () {
+        modalChangePassword.modal('show')
+    })
+    formChangePassword.on('submit', function (e) {
+        e.preventDefault()
+        if (inputValid) {
+            const data = {
+                password_confirmation: $('#new-password-confirmation').val()
+            }
+            axios.put('/change-password', data).then(response => {
                 if (response.data.status === 'OK') {
-                    resolve(response)
-                }
-            })
+                    successAlert('Password berhasil diperbarui')
+                    $('#new-password').val('')
+                    $('#new-password-confirmation').val('')
+                    modalChangePassword.modal('hide')
+                } else failedAlert('Gagal memperbarui password')
+            }).catch(() => failedAlert('Gagal memperbarui password'))
+        }
+    })
+    formChangePassword.on('keyup', '#new-password-confirmation', function () {
+        if ($(this).val() !== $('#new-password').val()) {
+            $(this).addClass('is-invalid')
+            inputValid = false
+        } else {
+            $(this).removeClass('is-invalid')
+            inputValid = true
+        }
+    })
+
+    /* SCHOOL YEAR */
+    addSchoolYear.on('click', function () {
+        editedIndex = -1
+        $('#input-school-year').val('')
+        titleSchoolYear.html('Tambah Tahun Ajaran')
+        modalSchoolYear.modal('show')
+    })
+    formSchoolYear.on('submit', function (e) {
+        const data = {
+            tahun_ajaran: $('#input-school-year').val()
+        }
+        e.preventDefault()
+        if (editedIndex > -1) {
+            axios.put('/ajax/tahun-ajaran/' + editedIndex, data).then(response => {
+                if (response.data.status === 'OK') {
+                    tableSchoolYear.ajax.reload(null, false)
+                    modalSchoolYear.modal('hide')
+                    savedAlert()
+                } else unsavedAlert()
+            }).catch(() => unsavedAlert())
+        } else {
+            axios.post('/ajax/tahun-ajaran', data).then(response => {
+                if (response.data.status === 'OK') {
+                    tableSchoolYear.ajax.reload(null, false)
+                    modalSchoolYear.modal('hide')
+                    savedAlert()
+                } else unsavedAlert()
+            }).catch(() => unsavedAlert())
+        }
+    })
+    tableSchoolYear.on('click', '.edit-item', function () {
+        editedIndex = $(this).data('id')
+        titleSchoolYear.html('Edit Tahun Ajaran')
+        axios.get('/ajax/tahun-ajaran/' + editedIndex).then(response => {
+            if (response.data.status === 'OK') {
+                $('#input-school-year').val(response.data.data.tahun_ajaran)
+                modalSchoolYear.modal('show')
+            }
         })
+    })
+    tableSchoolYear.on('click', '.delete-item', function () {
+        editedIndex = $(this).data('id')
+        removeConfirm().then(result => {
+            if (result.value) {
+                axios.delete('/ajax/tahun-ajaran/' + editedIndex).then(response => {
+                    if (response.data.status === 'OK') {
+                        tableSchoolYear.ajax.reload(null, false)
+                        removedAlert()
+                    } else unremovedAlert()
+                }).catch(() => unremovedAlert())
+            }
+        })
+    })
+
+    initializeView()
+
+    /* ALERT */
+    function savedAlert () {
+        swal({
+            title: 'Success',
+            text: 'Data berhasil disimpan',
+            type: 'success',
+            buttonsStyling: false,
+            confirmButtonClass: 'btn btn-success',
+            timer: 1500
+        })
+    }
+    function removedAlert () {
+        swal({
+            title: 'Success',
+            text: 'Data berhasil dihapus',
+            type: 'success',
+            buttonsStyling: false,
+            confirmButtonClass: 'btn btn-success',
+            timer: 1500
+        })
+    }
+    function successAlert (msg) {
+        swal({
+            title: 'Success',
+            text: msg,
+            type: 'success',
+            buttonsStyling: false,
+            confirmButtonClass: 'btn btn-success',
+            timer: 1500
+        })
+    }
+    function failedAlert (msg) {
+        swal({
+            title: 'Error',
+            text: msg,
+            type: 'error',
+            buttonsStyling: false,
+            confirmButtonClass: 'btn btn-info',
+            timer: 1500
+        })
+    }
+    function removeConfirm () {
+        return new Promise(resolve => {
+            swal({
+                title: 'Apa anda yakin?',
+                text: "Perubahan tidak dapat dikembalikan!",
+                type: 'warning',
+                showCancelButton: true,
+                buttonsStyling: false,
+                confirmButtonClass: 'btn btn-danger',
+                confirmButtonText: 'Ya',
+                cancelButtonClass: 'btn btn-secondary',
+                cancelButtonText: 'Batal',
+                reverseButtons: true
+            }).then(result => resolve(result))
+        })
+    }
+    function unremovedAlert () {
+        swal({
+            title: 'Error',
+            text: 'Gagal menghapus data',
+            type: 'error',
+            buttonsStyling: false,
+            confirmButtonClass: 'btn btn-info',
+            timer: 1500
+        })
+    }
+    function unsavedAlert () {
+        swal({
+            title: 'Error',
+            text: 'Gagal menyimpan data',
+            type: 'error',
+            buttonsStyling: false,
+            confirmButtonClass: 'btn btn-info',
+            timer: 1500
+        })
+    }
+
+    /* INITIALIZER */
+    function initializeView () {
+        activateNav()
+    }
+    function activateNav () {
+        const endpoint = window.location.pathname
+        if (endpoint === '/tahun-ajaran') {
+            $('#nav-tahun-ajaran').addClass('active')
+        } else if (endpoint === '/siswa') {
+            $('#nav-siswa').addClass('active')
+            $('#tabel-siswa').DataTable()
+        } else if (endpoint === '/dashboard') {
+            $('#nav-dashboard').addClass('active')
+            const totalTransactions = $('#total-transactions')
+            totalTransactions.html(formatRupiah(totalTransactions.html(), 'Rp. '))
+        } else if (endpoint === '/kelas') {
+            $('#nav-kelas').addClass('active')
+        } else if (endpoint === '/pembayaran') {
+            $('#nav-pembayaran').addClass('active')
+            initTransaction()
+            generatePayment()
+        } else if (endpoint === '/laporan') {
+            $('#nav-laporan').addClass('active')
+            initReport()
+        }
     }
 })
 

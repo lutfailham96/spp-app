@@ -1,6 +1,5 @@
 from app.databases.db_sql import db_sql
 import datetime
-from uuid import uuid4
 
 
 class Pembayaran(db_sql.Model):
@@ -14,8 +13,6 @@ class Pembayaran(db_sql.Model):
     tgl_pembayaran = db_sql.Column(db_sql.Date(), nullable=False, default=datetime.datetime.utcnow())
     nominal = db_sql.Column(db_sql.Integer(), nullable=False)
     status = db_sql.Column(db_sql.Boolean(), nullable=False)  # false: tepat, true: tunggakan
-    # tahun_ajaran = db_sql.Column(db_sql.String(32), nullable=False)
-    # kelas
 
     def to_table(self, index):
         return {

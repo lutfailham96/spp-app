@@ -1,7 +1,7 @@
 import datetime
-from uuid import uuid4
 from flask import Flask, render_template, request, redirect, url_for, flash, abort
 from flask_login import login_user, login_required, current_user, logout_user
+from werkzeug.security import generate_password_hash
 from config import Config
 from app.databases import init_databases
 from app.databases.models.siswa import Siswa
@@ -13,7 +13,7 @@ from app.databases.models.pembayaran import Pembayaran
 from app.managers import init_managers
 from app.helpers.db_helper import add, update, delete
 from random import randint
-
+import numpy as np
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -23,6 +23,14 @@ app.jinja_env.trim_blocks = True
 # init managers and databases
 init_databases(app)
 init_managers(app)
+
+
+def rp_hash(person):
+    r_hash = 5381
+    value = person.upper()
+    for char in value:
+        r_hash = ((np.left_shift(r_hash, 5) + r_hash) + ord(char))
+    return np.int32(r_hash)
 
 
 @app.after_request
@@ -55,12 +63,17 @@ def login():
     if current_user.is_authenticated:
         return redirect(url_for('dashboard'))
     if request.method == 'POST':
+        url_next = request.args.get('next')
         username = request.form.get('username')
         password = request.form.get('password')
-        user = User.query.filter((User.username == username) & (User.password == password)).first()
-        if user is not None:
+        real_person = request.form.get('realPerson')
+        real_person_hash = request.form.get('realPersonHash')
+        if rp_hash(real_person) != int(real_person_hash):
+            flash('Captcha salah', 'errors')
+            return render_template('login.html')
+        user = User.query.filter(User.username == username).first()
+        if user is not None and user.check_password(password):
             login_user(user)
-            url_next = request.args.get('next')
             return redirect(url_next or url_for('dashboard'))
         flash('Kombinasi username & password salah', 'errors')
     return render_template('login.html')
@@ -170,7 +183,9 @@ def profile():
         password = json['password']
         name = json['name']
         app.logger.info(json)
-        user = User.query.filter((User.username == username) & (User.password == password)).first_or_404()
+        user = User.query.filter(User.username == username).first()
+        if user is None or not user.check_password(password):
+            abort(404)
         user.nama = name
         if update():
             return success_w()
@@ -180,11 +195,12 @@ def profile():
 
 
 @app.route('/change-password', methods=['PUT'])
+@login_required
 def change_password():
     user = User.query.filter(User.username == current_user.username).first_or_404()
     json = request.get_json()
     password = json['password_confirmation']
-    user.password = password
+    user.password = generate_password_hash(password)
     if update():
         return success_w()
     else:
@@ -220,15 +236,15 @@ def ajax_school_year():
     )
 
 
-@app.route('/ajax/tahun-ajaran/<id>', methods=['GET', 'PUT', 'DELETE'])
+@app.route('/ajax/tahun-ajaran/<id_ajaran>', methods=['GET', 'PUT', 'DELETE'])
 @login_required
-def ajax_school_year_id(id):
+def ajax_school_year_id(id_ajaran):
     if request.method == 'DELETE':
-        if delete(TahunAjaran, id):
+        if delete(TahunAjaran, id_ajaran):
             return success_w()
         else:
             abort(500)
-    item = TahunAjaran.query.filter(TahunAjaran.id == int(id)).first()
+    item = TahunAjaran.query.filter(TahunAjaran.id == int(id_ajaran)).first()
     if request.method == 'PUT':
         json = request.get_json()
         school_year = json['tahun_ajaran']
@@ -243,13 +259,14 @@ def ajax_school_year_id(id):
 
 
 @app.route('/ajax/siswa', methods=['GET', 'POST'])
+@login_required
 def ajax_student():
     if request.method == 'POST':
         json = request.get_json()
         nis = json['nis']
         name = json['nama']
         gender = json['jenis_kelamin']
-        kelas = json['kelas']
+        d_class = json['kelas']
         school_year = json['tahun_ajaran']
         religion = json['agama']
         student_type = json['jenis_siswa']
@@ -258,7 +275,7 @@ def ajax_student():
             nis_siswa=nis,
             nama_siswa=name,
             jenis_kelamin=gender,
-            id_kelas=int(kelas),
+            id_kelas=int(d_class),
             id_tahun_ajaran=int(school_year),
             agama=religion,
             jenis_siswa=student_type,
@@ -268,16 +285,18 @@ def ajax_student():
             return success_w()
         else:
             abort(422)
-    kelas = request.args.get('kelas')
-    student = []
-    if kelas == '':
+    d_class = request.args.get('kelas')
+    # student = []
+    if d_class == '':
         students = Siswa.query.join(Kelas, Siswa.id_kelas == Kelas.id) \
-            .join(TahunAjaran, Siswa.id_tahun_ajaran == TahunAjaran.id).add_columns(Kelas.kelas, TahunAjaran.tahun_ajaran) \
+            .join(TahunAjaran, Siswa.id_tahun_ajaran == TahunAjaran.id) \
+            .add_columns(Kelas.kelas, TahunAjaran.tahun_ajaran) \
             .order_by(Siswa.id_kelas).all()
     else:
         students = Siswa.query.join(Kelas, Siswa.id_kelas == Kelas.id) \
-            .join(TahunAjaran, Siswa.id_tahun_ajaran == TahunAjaran.id).add_columns(Kelas.kelas, TahunAjaran.tahun_ajaran) \
-            .filter(Siswa.id_kelas == kelas) \
+            .join(TahunAjaran, Siswa.id_tahun_ajaran == TahunAjaran.id) \
+            .add_columns(Kelas.kelas, TahunAjaran.tahun_ajaran) \
+            .filter(Siswa.id_kelas == d_class) \
             .order_by(Siswa.id_kelas).all()
     return {
         'status': 'OK',
@@ -285,20 +304,20 @@ def ajax_student():
     }
 
 
-@app.route('/ajax/siswa/<id>', methods=['GET', 'PUT', 'DELETE'])
+@app.route('/ajax/siswa/<id_student>', methods=['GET', 'PUT', 'DELETE'])
 @login_required
-def ajax_student_id(id):
+def ajax_student_id(id_student):
     if request.method == 'DELETE':
-        if delete(Siswa, id):
+        if delete(Siswa, id_student):
             return success_w()
         else:
             abort(500)
     if request.method == 'PUT':
-        item = Siswa.query.filter(Siswa.id == id).first_or_404()
+        item = Siswa.query.filter(Siswa.id == id_student).first_or_404()
         json = request.get_json()
         name = json['nama']
         gender = json['jenis_kelamin']
-        kelas = json['kelas']
+        d_class = json['kelas']
         school_year = json['tahun_ajaran']
         religion = json['agama']
         student_type = json['jenis_siswa']
@@ -309,7 +328,7 @@ def ajax_student_id(id):
         item.agama = religion
         item.jenis_siswa = int(student_type)
         item.id_tahun_ajaran = int(school_year)
-        item.id_kelas = int(kelas)
+        item.id_kelas = int(d_class)
         if update():
             return success_w()
         else:
@@ -317,13 +336,14 @@ def ajax_student_id(id):
     item = Siswa.query.join(Kelas, Siswa.id_kelas == Kelas.id) \
         .join(TahunAjaran, Siswa.id_tahun_ajaran == TahunAjaran.id) \
         .add_columns(Kelas.kelas, TahunAjaran.tahun_ajaran) \
-        .filter(Siswa.id == id).first_or_404()
+        .filter(Siswa.id == id_student).first_or_404()
     return success_w(
         data=item[0].to_table(1, item[1], item[2])
     )
 
 
 @app.route('/ajax/pembayaran', methods=['GET', 'POST'])
+@login_required
 def ajax_transaction():
     if request.method == 'POST':
         json = request.get_json()
@@ -354,7 +374,7 @@ def ajax_transaction():
     nis = request.args.get('nis') if request.args.get('nis') else None
     # year = int(request.args.get('tahun')) if request.args.get('tahun') else None
     y_now = datetime.datetime.now().year
-    items = Pembayaran.query.filter((Pembayaran.nis_siswa == nis) & (Pembayaran.tahun == y_now))\
+    items = Pembayaran.query.filter((Pembayaran.nis_siswa == nis) & (Pembayaran.tahun == y_now)) \
         .order_by(Pembayaran.bulan.asc()).all()
     return success_w(
         data=[d.to_table(idx) for idx, d in enumerate(items)]
@@ -362,9 +382,10 @@ def ajax_transaction():
 
 
 @app.route('/ajax/pembayaran/<uuid>')
+@login_required
 def ajax_pembayaran_uuid(uuid):
     item = Pembayaran.query.filter(Pembayaran.uuid == uuid).first_or_404()
-    student = Siswa.query.join(Kelas, Siswa.id_kelas == Kelas.id).add_column(Kelas.kelas)\
+    student = Siswa.query.join(Kelas, Siswa.id_kelas == Kelas.id).add_column(Kelas.kelas) \
         .filter(Siswa.nis_siswa == item.nis_siswa).first()
     print(student)
     return success_w(
@@ -373,14 +394,21 @@ def ajax_pembayaran_uuid(uuid):
 
 
 @app.route('/ajax/laporan')
+@login_required
 def ajax_report():
     tunggakan_data = []
     tepat_data = []
     last_data = Pembayaran.query.order_by(Pembayaran.bulan.desc()).first()
     # m_now = datetime.datetime.now().month - 1
     for i in range(last_data.bulan + 1):
-        tunggakan_data.append(Pembayaran.query.filter((Pembayaran.status == 1) & (Pembayaran.bulan == i) & (Pembayaran.jenis_siswa == 0)).count())
-        tepat_data.append(Pembayaran.query.filter((Pembayaran.status == 0) & (Pembayaran.bulan == i) & (Pembayaran.jenis_siswa == 0)).count())
+        tunggakan_data.append(Pembayaran.query.filter(
+            (Pembayaran.status == 1) &
+            (Pembayaran.bulan == i) &
+            (Pembayaran.jenis_siswa == 0)).count())
+        tepat_data.append(Pembayaran.query.filter(
+            (Pembayaran.status == 0) &
+            (Pembayaran.bulan == i) &
+            (Pembayaran.jenis_siswa == 0)).count())
     tunggakan = Pembayaran.query.filter(Pembayaran.status == 1).count()
     tepat = Pembayaran.query.filter(Pembayaran.status == 0).count()
     return success_w(
@@ -394,6 +422,7 @@ def ajax_report():
 
 
 @app.route('/ajax/laporan2')
+@login_required
 def ajax_report_2():
     items = Pembayaran.query.order_by(Pembayaran.tahun.asc()).all()
     return success_w(

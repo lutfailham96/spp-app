@@ -37,15 +37,14 @@
                     <!-- ./Card-Header -->
                     <!-- Card-Body -->
                     <div class="card-body card-body-sm">
-                        <div class="btn-group ml-1">
-                            <label for="filter-class" class="ml--1"></label>
-                            <select id="filter-class" class="form-control form-control-sm">
+                        <div class="form-group d-flex mb-2">
+                            <select id="filter-class" class="form-control form-control-sm float-left mr-1" style="max-width: 130px;">
                                 <option value="" selected>=== Kelas ===</option>
                                 {% for class in classes %}
                                     <option value="{{ class.id }}">{{ class.kelas }}</option>
                                 {% endfor %}
                             </select>
-                            <button id="show-class" type="button" class="btn btn-sm btn-primary">Tampilkan</button>
+                            <button id="show-class" type="button" class="btn btn-sm btn-primary float-left ml-1">Tampilkan</button>
                         </div>
                         <div class="table-responsive py-2">
                             <table class="table table-bordered table-sm text-center" id="table-student">
@@ -108,12 +107,12 @@
                                 <div class="col-lg-6 col-sm-12">
                                     <label for="input-class" class="form-control-label">Kelas</label>
                                     <select id="input-class" class="form-control form-control-sm" required>
-                                        <option>X TKJ</option>
-                                        <option>XI TKJ</option>
-                                        <option>XII TKJ</option>
-                                        <option>X FARMASI</option>
-                                        <option>XI FARMASI</option>
-                                        <option>XII FARMASI</option>
+{#                                        <option>X TKJ</option>#}
+{#                                        <option>XI TKJ</option>#}
+{#                                        <option>XII TKJ</option>#}
+{#                                        <option>X FARMASI</option>#}
+{#                                        <option>XI FARMASI</option>#}
+{#                                        <option>XII FARMASI</option>#}
                                     </select>
                                 </div>
                                 <div class="col-lg-6 col-sm-12">

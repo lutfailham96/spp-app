@@ -20,6 +20,30 @@
     }
 }
 
+#student-nis:before {
+    content: ': ';
+}
+
+#student-name:before {
+    content: ': ';
+}
+
+#student-class:before {
+    content: ': ';
+}
+
+#student-school-year:before {
+    content: ': ';
+}
+
+#student-gender:before {
+    content: ': ';
+}
+
+#student-address:before {
+    content: ': ';
+}
+
 #print-container {
     position: absolute;
     left: -9999px;
